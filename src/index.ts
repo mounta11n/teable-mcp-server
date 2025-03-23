@@ -16,15 +16,12 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import axios from 'axios';
 
-// API-Key aus der Umgebungsvariable
-const API_KEY = process.env.TEABLE_API_KEY;
-if (!API_KEY) {
-  console.error('WARNUNG: TEABLE_API_KEY Umgebungsvariable ist nicht gesetzt');
-}
+// API-Key und Tabellen-ID manuell eintragen
+const TEABLE_API_KEY = 'teable_XXX';
+const TABLE_ID = 'tblXXX'; // Hier die gewünschte Tabellen-ID eintragen
 
 // Typdefinition für die Argumente des query_teable-Tools
 interface QueryTeableArgs {
-  tableId: string;
   filter?: string;
   sort?: string;
   limit?: number;
@@ -39,7 +36,6 @@ const isValidQueryTeableArgs = (
   return (
     typeof args === 'object' &&
     args !== null &&
-    'tableId' in args && typeof (args as QueryTeableArgs).tableId === 'string' &&
     (!('filter' in args) || typeof (args as QueryTeableArgs).filter === 'string') &&
     (!('sort' in args) || typeof (args as QueryTeableArgs).sort === 'string') &&
     (!('limit' in args) || typeof (args as QueryTeableArgs).limit === 'number')
@@ -87,10 +83,6 @@ class TeableServer {
           inputSchema: {
             type: 'object',
             properties: {
-              tableId: {
-                type: 'string',
-                description: 'Die ID der Teable-Tabelle (z.B. tblMIKjgQRIvgq1NrBZ)',
-              },
               filter: {
                 type: 'string',
                 description: 'Optional, Filterkriterien im JSON-Format',
@@ -105,7 +97,7 @@ class TeableServer {
                 minimum: 1,
               }
             },
-            required: ['tableId'],
+            required: [],
           },
         },
       ],
@@ -127,7 +119,7 @@ class TeableServer {
         );
       }
 
-      const { tableId, filter, sort, limit } = request.params.arguments;
+      const { filter, sort, limit } = request.params.arguments;
 
       try {
         // Basis-URL für die Teable-API
@@ -151,7 +143,7 @@ class TeableServer {
         // Konfiguration für die Anfrage
         const config = {
           headers: {
-            'Authorization': `Bearer ${API_KEY}`,
+            'Authorization': `Bearer ${TEABLE_API_KEY}`,
             'Accept': 'application/json'
           },
           params
@@ -159,7 +151,7 @@ class TeableServer {
 
         // GET-Anfrage an die Teable-API
         const response = await axios.get(
-          `${baseUrl}/${encodeURIComponent(tableId)}/record`,
+          `${baseUrl}/${encodeURIComponent(TABLE_ID)}/record`,
           config
         );
 
@@ -168,7 +160,7 @@ class TeableServer {
           content: [
             {
               type: 'text',
-              text: `Daten erfolgreich aus Teable-Tabelle ${tableId} abgefragt:\n${JSON.stringify(response.data, null, 2)}`,
+              text: `Daten erfolgreich aus Teable-Tabelle ${TABLE_ID} abgefragt:\n${JSON.stringify(response.data, null, 2)}`,
             },
           ],
         };
