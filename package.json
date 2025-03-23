@@ -1,7 +1,7 @@
 {
-  "name": "ntfy-server",
+  "name": "teable-server",
   "version": "1.0.0",
-  "description": "MCP-Server to send messages to ntfy.sh",
+  "description": "MCP-Server to interact with the teable database",
   "main": "build/index.js",
   "type": "module",
   "scripts": {

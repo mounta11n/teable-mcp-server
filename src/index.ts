@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * MCP-Server for ntfy.sh
- * This server will send messages to a specified ntfy.sh
- * ntfy.sh is a nice service which can enhance your workflows,
- * because the clients will get push notifications, even on iphones.
+ * MCP-Server for teable
+ * This server will query a specified teable database
+ * teable is an opensource alternative to airtable.
  */
 
+// @ts-nocheck
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -16,34 +16,47 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import axios from 'axios';
 
+// API-Key aus der Umgebungsvariable
+const API_KEY = process.env.TEABLE_API_KEY;
+if (!API_KEY) {
+  console.error('WARNUNG: TEABLE_API_KEY Umgebungsvariable ist nicht gesetzt');
+}
+
+// Typdefinition für die Argumente des query_teable-Tools
+interface QueryTeableArgs {
+  tableId: string;
+  filter?: string;
+  sort?: string;
+  limit?: number;
+}
+
 /**
- * check if arguments in send_message-Tool are valid
+ * Prüft, ob die Argumente für das query_teable-Tool gültig sind
  */
-const isValidSendMessageArgs = (
-  args: any
-): args is { channel: string; message: string; title?: string; priority?: number; tags?: string[] } => {
+const isValidQueryTeableArgs = (
+  args: unknown
+): args is QueryTeableArgs => {
   return (
     typeof args === 'object' &&
     args !== null &&
-    typeof args.channel === 'string' &&
-    typeof args.message === 'string' &&
-    (args.title === undefined || typeof args.title === 'string') &&
-    (args.priority === undefined || typeof args.priority === 'number') &&
-    (args.tags === undefined || Array.isArray(args.tags))
+    'tableId' in args && typeof (args as QueryTeableArgs).tableId === 'string' &&
+    (!('filter' in args) || typeof (args as QueryTeableArgs).filter === 'string') &&
+    (!('sort' in args) || typeof (args as QueryTeableArgs).sort === 'string') &&
+    (!('limit' in args) || typeof (args as QueryTeableArgs).limit === 'number')
   );
 };
 
 /**
- * NtfyServer class to implement the MCP-server
+ * TeableServer class to implement the MCP-server
  */
-class NtfyServer {
+class TeableServer {
   private server: Server;
 
   constructor() {
     // Server mit Namen und Version initialisieren
     this.server = new Server(
       {
-        name: 'ntfy-server',
+        name: 'teable-server',
         version: '1.0.0',
       },
       {
@@ -54,7 +67,7 @@ class NtfyServer {
     );
 
     this.setupToolHandlers();
-    this.server.onerror = (error) => console.error('[MCP Error]', error);
+    this.server.onerror = (error: unknown) => console.error('[MCP Error]', error);
     process.on('SIGINT', async () => {
       await this.server.close();
       process.exit(0);
@@ -69,38 +82,30 @@ class NtfyServer {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
         {
-          name: 'send_message',
-          description: 'Sendet eine Nachricht an einen ntfy.sh-Kanal',
+          name: 'query_teable',
+          description: 'Fragt Daten aus einer Teable-Datenbanktabelle ab',
           inputSchema: {
             type: 'object',
             properties: {
-              channel: {
+              tableId: {
                 type: 'string',
-                description: 'Der ntfy.sh-Kanal, an den die Nachricht gesendet wird',
+                description: 'Die ID der Teable-Tabelle (z.B. tblMIKjgQRIvgq1NrBZ)',
               },
-              message: {
+              filter: {
                 type: 'string',
-                description: 'Die zu sendende Nachricht',
+                description: 'Optional, Filterkriterien im JSON-Format',
               },
-              title: {
+              sort: {
                 type: 'string',
-                description: 'Optional, Titel der Nachricht',
+                description: 'Optional, Sortierkriterien im JSON-Format',
               },
-              priority: {
+              limit: {
                 type: 'number',
-                description: 'Optional, Priorität (1-5, wobei 5 die höchste Prio ist)',
+                description: 'Optional, Maximale Anzahl der zurückgegebenen Datensätze',
                 minimum: 1,
-                maximum: 5,
-              },
-              tags: {
-                type: 'array',
-                items: {
-                  type: 'string'
-                },
-                description: 'Optional, Tags für die Nachricht',
               }
             },
-            required: ['channel', 'message'],
+            required: ['tableId'],
           },
         },
       ],
@@ -108,67 +113,74 @@ class NtfyServer {
 
     // call tool-handler
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      if (request.params.name !== 'send_message') {
+      if (request.params.name !== 'query_teable') {
         throw new McpError(
           ErrorCode.MethodNotFound,
           `Unbekanntes Tool: ${request.params.name}`
         );
       }
 
-      if (!isValidSendMessageArgs(request.params.arguments)) {
+      if (!isValidQueryTeableArgs(request.params.arguments)) {
         throw new McpError(
           ErrorCode.InvalidParams,
-          'Ungültige Argumente für send_message'
+          'Ungültige Argumente für query_teable'
         );
       }
 
-      const { channel, message, title, priority, tags } = request.params.arguments;
+      const { tableId, filter, sort, limit } = request.params.arguments;
 
       try {
-        const config: any = {};
+        // Basis-URL für die Teable-API
+        const baseUrl = 'https://acdp.mountai.co/api/table';
         
-        const headers: Record<string, string> = {};
+        // Parameter für die Anfrage
+        const params: Record<string, string | number> = {};
         
-        if (title) {
-          headers['Title'] = title;
+        if (filter) {
+          params.filter = filter;
         }
         
-        if (priority) {
-          headers['Priority'] = priority.toString();
+        if (sort) {
+          params.sort = sort;
         }
         
-        if (tags && tags.length > 0) {
-          headers['Tags'] = tags.join(',');
+        if (limit) {
+          params.limit = limit;
         }
         
-        if (Object.keys(headers).length > 0) {
-          config.headers = headers;
-        }
+        // Konfiguration für die Anfrage
+        const config = {
+          headers: {
+            'Authorization': `Bearer ${API_KEY}`,
+            'Accept': 'application/json'
+          },
+          params
+        };
 
-        const response = await axios.post(
-          `https://ntfy.sh/${encodeURIComponent(channel)}`,
-          message,
+        // GET-Anfrage an die Teable-API
+        const response = await axios.get(
+          `${baseUrl}/${encodeURIComponent(tableId)}/record`,
           config
         );
 
-        // if success
+        // Bei Erfolg
         return {
           content: [
             {
               type: 'text',
-              text: `Nachricht erfolgreich an ntfy.sh/${channel} gesendet:\n${JSON.stringify(response.data, null, 2)}`,
+              text: `Daten erfolgreich aus Teable-Tabelle ${tableId} abgefragt:\n${JSON.stringify(response.data, null, 2)}`,
             },
           ],
         };
       } catch (error) {
-        // otherwise
+        // Bei Fehler
         if (axios.isAxiosError(error)) {
           return {
             content: [
               {
                 type: 'text',
-                text: `Fehler beim Senden der Nachricht: ${
-                  error.response?.data || error.message
+                text: `Fehler bei der Abfrage der Teable-Datenbank: ${
+                  error.response?.data ? JSON.stringify(error.response.data) : error.message
                 }`,
               },
             ],
@@ -186,9 +198,9 @@ class NtfyServer {
   async run() {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('Ntfy MCP-Server läuft über stdio');
+    console.error('Teable MCP-Server läuft über stdio');
   }
 }
 
-const server = new NtfyServer();
+const server = new TeableServer();
 server.run().catch(console.error);

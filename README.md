@@ -1,4 +1,4 @@
-# ntfy-mcp-server
+# teable-mcp-server
 
 
 
