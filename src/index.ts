@@ -16,11 +16,11 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import axios from 'axios';
 
-// API-Key und Tabellen-ID manuell eintragen
+// Enter API key and table ID manually
 const TEABLE_API_KEY = 'teable_XXX';
-const TABLE_ID = 'tblXXX'; // Hier die gewünschte Tabellen-ID eintragen
+const TABLE_ID = 'tblXXX';
 
-// Typdefinition für die Argumente des query_teable-Tools
+// Type definition for the arguments of the query_teable tool
 interface QueryTeableArgs {
   filter?: string;
   sort?: string;
@@ -28,7 +28,7 @@ interface QueryTeableArgs {
 }
 
 /**
- * Prüft, ob die Argumente für das query_teable-Tool gültig sind
+ * This checks whether the arguments for the query_teable tool are valid
  */
 const isValidQueryTeableArgs = (
   args: unknown
@@ -49,7 +49,7 @@ class TeableServer {
   private server: Server;
 
   constructor() {
-    // Server mit Namen und Version initialisieren
+    // Initialize server with name and version
     this.server = new Server(
       {
         name: 'teable-server',
@@ -74,7 +74,7 @@ class TeableServer {
    * setup tool-handler
    */
   private setupToolHandlers() {
-    // tool-liste
+    // tool-list
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
         {
@@ -122,10 +122,10 @@ class TeableServer {
       const { filter, sort, limit } = request.params.arguments;
 
       try {
-        // Basis-URL für die Teable-API
+        // Teable-API Base-URL
         const baseUrl = 'https://acdp.mountai.co/api/table';
         
-        // Parameter für die Anfrage
+        // Parameters for the request
         const params: Record<string, string | number> = {};
         
         if (filter) {
@@ -140,7 +140,7 @@ class TeableServer {
           params.limit = limit;
         }
         
-        // Konfiguration für die Anfrage
+        // Configuration for the request
         const config = {
           headers: {
             'Authorization': `Bearer ${TEABLE_API_KEY}`,
@@ -149,13 +149,13 @@ class TeableServer {
           params
         };
 
-        // GET-Anfrage an die Teable-API
+        // GET request to the Teable API
         const response = await axios.get(
           `${baseUrl}/${encodeURIComponent(TABLE_ID)}/record`,
           config
         );
 
-        // Bei Erfolg
+        // If successful
         return {
           content: [
             {
@@ -165,7 +165,7 @@ class TeableServer {
           ],
         };
       } catch (error) {
-        // Bei Fehler
+        // In case of error
         if (axios.isAxiosError(error)) {
           return {
             content: [
